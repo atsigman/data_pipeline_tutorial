@@ -1,0 +1,130 @@
+import torch
+import torchaudio
+
+from dataclasses import dataclass
+from typing import Dict, List
+
+from torch.utils.data import Dataset
+from torchaudio.functional import resample
+
+from music_data_pipeline.constants import (
+    DEFAULT_FILTER_QUERY,
+    DEFAULT_SR,
+    DEFAULT_CROP_DUR,
+    AUGMENTATION_HM
+)
+
+from music_data_pipeline.util.dataset_utils import (
+    apply_filter_query,
+    crop_pad_audio,
+    apply_augmentations
+)
+
+
+@dataclass
+class TextCondition:
+    artist: str
+    album_title: str
+    track_title: str
+    genres: List[str]
+    tempo: int
+
+
+class AudioDataset(Dataset):
+    """
+    Dataset class for handling audio with text conditions.
+    A filter query is applied to the given input data/collection.
+    Crops (or pads) audio, optionally applies augmentations and/or
+    an audio transform (e.g., MelSpectrogram or MFCC), and creates
+    a TextCondition based upon entry (text) metadata.
+
+    Returns a processed audio tensor and a TextCondition.
+    """
+
+    def __init__(self,
+                 input_data: List[Dict],
+                 filter_query: Dict = DEFAULT_FILTER_QUERY,
+                 target_sr: int = DEFAULT_SR,
+                 crop_dur: int = DEFAULT_CROP_DUR,
+                 random_crop: bool = True,
+                 augmentations: Dict = AUGMENTATION_HM,
+                 transform=None
+                ):
+
+        if filter_query is not None:
+            self.data = apply_filter_query(input_data, filter_query)
+
+        else:
+            self.data = input_data
+
+        print(f"{len(self.data)} entries.")
+
+        self.target_sr = target_sr
+        self.crop_dur = crop_dur
+        self.random_crop = random_crop
+        self.augmentations = augmentations
+        self.transform = transform
+
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        entry = self.data[idx]
+
+        # load audio:
+        backend = "ffmpeg" if entry["audio_path"].endswith(".mp3") else "soundfile"
+
+        audio, sr = torchaudio.load(entry["audio_path"], backend=backend)
+
+        # Resample, if source sr != target_sr
+        if sr != self.target_sr:
+            audio = resample(audio, orig_freq=sr, new_freq=self.target_sr)
+
+        audio_dur = entry["duration"]
+        # Crop audio:
+        if audio_dur > self.crop_dur:
+            if self.random_crop:
+                trimmed_audio = crop_pad_audio(audio,
+                                               self.target_sr,
+                                               audio_dur,
+                                               self.crop_dur)
+
+            # By default, take the first self.crop_dur seconds:
+            else:
+                trimmed_audio = audio[:, :self.crop_dur * self.target_sr]
+
+        # Pad if necessary:
+        elif audio_dur < self.crop_dur:
+            delta = (self.crop_dur - entry["duration"]) * self.target_sr
+            trimmed_audio = torch.nn.functional.pad(audio, (0, delta))
+
+        else:
+            trimmed_audio = audio
+
+        # Verify that trimmed audio is self.crop_dur duration:
+        trimmed_audio_dur = trimmed_audio.shape[1] / self.target_sr
+        fail_msg = f"Audio duration is {trimmed_audio_dur} seconds; expected {self.crop_dur}"
+        assert trimmed_audio_dur == self.crop_dur, fail_msg
+
+        # Apply random augmentation(s):
+        if self.augmentations is not None:
+            trimmed_audio = apply_augmentations(audio, self.target_sr, self.augmentations)
+
+        # Apply audio transform, if a transform is provided:
+        if self.transform is not None:
+            if trimmed_audio.shape[0] == 2:
+                trimmed_audio = trimmed_audio.mean(dim=0, keepdim=True)
+            trimmed_audio = self.transform(trimmed_audio)
+
+
+        # Construct TextCondition:
+        text_condition = TextCondition(
+                            artist=entry.get("artist", None),
+                            album_title=entry.get("album_title", None),
+                            track_title=entry.get("track_title", None),
+                            genres=entry.get("genres", None),
+                            tempo=entry.get("tempo", None)
+                        )
+
+        return trimmed_audio, text_condition
