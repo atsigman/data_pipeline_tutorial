@@ -1,7 +1,6 @@
 import torch
 import torchaudio.functional as F
 
-
 """
 Audio data preprocessing
 """
@@ -22,9 +21,12 @@ DEFAULT_MAX_CHUNK_DUR = 600
 """
 Metadata (text) preprocessing
 """
+METADATA_TAGS = ["artist_name", "album_title", "track_title", "genres"]
+
 BLACKLIST_GENRES = {
     "podcast",
     "audiobook",
+    "audio book",
     "spoken word",
     "documentary",
     "field recording",
@@ -44,31 +46,32 @@ DEFAULT_CROP_RES = 0.5
 DEFAULT_FILTER_QUERY = {
     "duration": {"$gt": 10},
     "blacklist_flags": [],
-    "silent_regions": {"$exists": True}
+    "silent_regions": {"$exists": True},
 }
 
 # Filter query operator dispatch table
 # (for applying filter query to pseudo-Mongo collection dictionary):
-OP_DICT = {"$eq": lambda val, op_val: val == op_val,
-           "$gt": lambda val, op_val: val > op_val,
-           "lt": lambda val, op_val: val < op_val,
-           "$gte": lambda val, op_val: val >= op_val,
-           "$lte": lambda val, op_val: val <= op_val,
-           "$in": lambda val, op_val: val in op_val,
-           "$nin": lambda val, op_val: val not in op_val,
-           "$exists": lambda val, op_val: (val is not None) == op_val,
+OP_DICT = {
+    "$eq": lambda val, op_val: val == op_val,
+    "$gt": lambda val, op_val: val > op_val,
+    "lt": lambda val, op_val: val < op_val,
+    "$gte": lambda val, op_val: val >= op_val,
+    "$lte": lambda val, op_val: val <= op_val,
+    "$in": lambda val, op_val: val in op_val,
+    "$nin": lambda val, op_val: val not in op_val,
+    "$exists": lambda val, op_val: (val is not None) == op_val,
 }
 
 # Hashmap of audio augmentation operations:
 AUGMENTATION_HM = {
-        "none": lambda audio: audio,
-        "invert": lambda audio: -audio,
-        "flip_chan": lambda audio: torch.flip(audio, dims=[0]),
-        "gain": lambda audio, low=0.8, high=1.1: audio * torch.empty(1).uniform_(low, high),
-        "noise": lambda audio: audio + 0.01 * torch.rand_like(audio),
-        "pitch_shift": lambda audio, sr, min_shift=-2.0, max_shift=2.0: F.pitch_shift(
-            audio,
-            sample_rate=sr,
-            n_steps=torch.empty(1).uniform_(min_shift, max_shift).item()
-        ),
-    }
+    "none": lambda audio: audio,
+    "invert": lambda audio: -audio,
+    "flip_chan": lambda audio: torch.flip(audio, dims=[0]),
+    "gain": lambda audio, low=0.8, high=1.1: audio * torch.empty(1).uniform_(low, high),
+    "noise": lambda audio: audio + 0.01 * torch.rand_like(audio),
+    "pitch_shift": lambda audio, sr, min_shift=-2.0, max_shift=2.0: F.pitch_shift(
+        audio,
+        sample_rate=sr,
+        n_steps=torch.empty(1).uniform_(min_shift, max_shift).item(),
+    ),
+}

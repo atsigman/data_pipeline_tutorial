@@ -11,13 +11,13 @@ from music_data_pipeline.constants import (
     DEFAULT_FILTER_QUERY,
     DEFAULT_SR,
     DEFAULT_CROP_DUR,
-    AUGMENTATION_HM
+    AUGMENTATION_HM,
 )
 
 from music_data_pipeline.util.dataset_utils import (
     apply_filter_query,
     crop_pad_audio,
-    apply_augmentations
+    apply_augmentations,
 )
 
 
@@ -41,15 +41,16 @@ class AudioDataset(Dataset):
     Returns a processed audio tensor and a TextCondition.
     """
 
-    def __init__(self,
-                 input_data: List[Dict],
-                 filter_query: Dict = DEFAULT_FILTER_QUERY,
-                 target_sr: int = DEFAULT_SR,
-                 crop_dur: int = DEFAULT_CROP_DUR,
-                 random_crop: bool = True,
-                 augmentations: Dict = AUGMENTATION_HM,
-                 transform=None
-                ):
+    def __init__(
+        self,
+        input_data: List[Dict],
+        filter_query: Dict = DEFAULT_FILTER_QUERY,
+        target_sr: int = DEFAULT_SR,
+        crop_dur: int = DEFAULT_CROP_DUR,
+        random_crop: bool = True,
+        augmentations: Dict = AUGMENTATION_HM,
+        transform=None,
+    ):
 
         if filter_query is not None:
             self.data = apply_filter_query(input_data, filter_query)
@@ -64,7 +65,6 @@ class AudioDataset(Dataset):
         self.random_crop = random_crop
         self.augmentations = augmentations
         self.transform = transform
-
 
     def __len__(self):
         return len(self.data)
@@ -85,14 +85,13 @@ class AudioDataset(Dataset):
         # Crop audio:
         if audio_dur > self.crop_dur:
             if self.random_crop:
-                trimmed_audio = crop_pad_audio(audio,
-                                               self.target_sr,
-                                               audio_dur,
-                                               self.crop_dur)
+                trimmed_audio = crop_pad_audio(
+                    audio, self.target_sr, audio_dur, self.crop_dur
+                )
 
             # By default, take the first self.crop_dur seconds:
             else:
-                trimmed_audio = audio[:, :self.crop_dur * self.target_sr]
+                trimmed_audio = audio[:, : self.crop_dur * self.target_sr]
 
         # Pad if necessary:
         elif audio_dur < self.crop_dur:
@@ -104,12 +103,16 @@ class AudioDataset(Dataset):
 
         # Verify that trimmed audio is self.crop_dur duration:
         trimmed_audio_dur = trimmed_audio.shape[1] / self.target_sr
-        fail_msg = f"Audio duration is {trimmed_audio_dur} seconds; expected {self.crop_dur}"
+        fail_msg = (
+            f"Audio duration is {trimmed_audio_dur} seconds; expected {self.crop_dur}"
+        )
         assert trimmed_audio_dur == self.crop_dur, fail_msg
 
         # Apply random augmentation(s):
         if self.augmentations is not None:
-            trimmed_audio = apply_augmentations(audio, self.target_sr, self.augmentations)
+            trimmed_audio = apply_augmentations(
+                audio, self.target_sr, self.augmentations
+            )
 
         # Apply audio transform, if a transform is provided:
         if self.transform is not None:
@@ -117,14 +120,13 @@ class AudioDataset(Dataset):
                 trimmed_audio = trimmed_audio.mean(dim=0, keepdim=True)
             trimmed_audio = self.transform(trimmed_audio)
 
-
         # Construct TextCondition:
         text_condition = TextCondition(
-                            artist=entry.get("artist", None),
-                            album_title=entry.get("album_title", None),
-                            track_title=entry.get("track_title", None),
-                            genres=entry.get("genres", None),
-                            tempo=entry.get("tempo", None)
-                        )
+            artist=entry.get("artist", None),
+            album_title=entry.get("album_title", None),
+            track_title=entry.get("track_title", None),
+            genres=entry.get("genres", None),
+            tempo=entry.get("tempo", None),
+        )
 
         return trimmed_audio, text_condition

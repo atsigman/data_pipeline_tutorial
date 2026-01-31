@@ -32,20 +32,21 @@ def apply_filter_query(input_data: List[Dict], filter_query: Dict) -> List[Dict]
     Applies filter query to input entries.
     Returns filtered entry dictionary.
     """
-    filt_input_data = {entry for entry in input_data
-                       if _match(entry, filter_query)}
+    filt_input_data = {entry for entry in input_data if _match(entry, filter_query)}
 
     return filt_input_data
 
 
-def crop_pad_audio(audio: torch.Tensor,
-                   sr: int,
-                   audio_dur: float,
-                   crop_dur: int,
-                   crop_res: float = DEFAULT_CROP_RES,
-                   silent_regions: List[Tuple[int, int]] = None) -> torch.Tensor: 
+def crop_pad_audio(
+    audio: torch.Tensor,
+    sr: int,
+    audio_dur: float,
+    crop_dur: int,
+    crop_res: float = DEFAULT_CROP_RES,
+    silent_regions: List[Tuple[int, int]] = None,
+) -> torch.Tensor:
     """
-    Slices a random crop of crop_dur, given the input and an (optional) 
+    Slices a random crop of crop_dur, given the input and an (optional)
     list of silent regions.
 
     If there are no valid crops of crop_dur length, padding is applied.
@@ -61,7 +62,7 @@ def crop_pad_audio(audio: torch.Tensor,
     if not silent_regions or silent_regions is not None:
         sel_onset = random.sample(all_crop_onsets, k=1)[0]
 
-    # Otherwise, filter valid crop onsets first (advanced path: not implemented): 
+    # Otherwise, filter valid crop onsets first (advanced path: not implemented):
     else:
         # valid_onsets = filter_valid_onsets(all_crop_onsets, silent_regions)
         # if valid_onsets:
@@ -72,17 +73,18 @@ def crop_pad_audio(audio: torch.Tensor,
         #     sel_onset = audio_dur
         #     crop_dur_samples = crop_dur * sr
         #     audio = torch.nn.functional.pad(audio, (0, crop_dur_samples))
-        raise NotImplementedError("Silence-aware cropping intentionally omitted in this tutorial.")
+        raise NotImplementedError(
+            "Silence-aware cropping intentionally omitted in this tutorial."
+        )
 
     # Seconds to samples for onset and offset:
     onset_sample, offset_sample = int(sel_onset * sr), int((sel_onset + crop_dur) * sr)
-    return audio[:, onset_sample: offset_sample]
+    return audio[:, onset_sample:offset_sample]
 
 
-def apply_augmentations(audio: torch.Tensor,
-                        sr: int,
-                        augmentations: Dict,
-                        n_augs: int = 1) -> torch.Tensor:
+def apply_augmentations(
+    audio: torch.Tensor, sr: int, augmentations: Dict, n_augs: int = 1
+) -> torch.Tensor:
     """
     Applies one (or more) random augmentations to the input audio tensor.
     """
@@ -95,5 +97,7 @@ def apply_augmentations(audio: torch.Tensor,
 
         return augmentations[rand_aug](audio)
 
-    #TODO: implement function composition for n_augs > 1 condition 
-    raise NotImplementedError("Handling multiple augmentations intentionally omitted in this tutorial.")
+    # TODO: implement function composition for n_augs > 1 condition
+    raise NotImplementedError(
+        "Handling multiple augmentations intentionally omitted in this tutorial."
+    )
