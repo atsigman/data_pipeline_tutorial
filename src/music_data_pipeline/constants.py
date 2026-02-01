@@ -21,7 +21,7 @@ DEFAULT_MAX_CHUNK_DUR = 600
 """
 Metadata (text) preprocessing
 """
-METADATA_TAGS = ["artist_name", "album_title", "track_title", "genres"]
+DEFAULT_METADATA_TAGS = ["artist_name", "album_title", "track_title", "genres"]
 
 BLACKLIST_GENRES = {
     "podcast",
