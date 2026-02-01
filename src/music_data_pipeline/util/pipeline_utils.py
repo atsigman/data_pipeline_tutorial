@@ -19,7 +19,7 @@ from music_data_pipeline.constants import (
 
 
 def validate_prune_data(
-    entries: List[Dict], metadata_tags: DEFAULT_METADATA_TAGS
+    entries: List[Dict], metadata_tags: List = DEFAULT_METADATA_TAGS
 ) -> List[Dict]:
     """
     Removes entries lacking audio files or at least 1 metadata tag.
@@ -43,8 +43,6 @@ def validate_prune_data(
 """
 Audio data
 """
-
-
 def _get_audio_duration(audio: torch.Tensor, sr: int) -> float:
     """
     Extracts audio duration, given audio tensor.

@@ -14,7 +14,6 @@ DEFAULT_SILENCE_THRES = 0.005
 # the silent region detection context:
 DEFAULT_SILENT_REGION_THRES = 2
 
-
 # Maximum audio chunk duration (in seconds):
 DEFAULT_MAX_CHUNK_DUR = 600
 
