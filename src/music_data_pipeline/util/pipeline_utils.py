@@ -1,3 +1,4 @@
+import uuid
 import torch
 import torchaudio
 
@@ -7,28 +8,22 @@ from typing import Dict, List, Set, Tuple, Union
 
 from tqdm import tqdm
 
-from music_data_pipeline.constants import (
-    DEFAULT_SIM_THRES,
-    DEFAULT_DUR_DELTA_THRES,
-    DEFAULT_SILENCE_THRES,
-    DEFAULT_SILENT_REGION_THRES,
-    DEFAULT_MAX_CHUNK_DUR,
-    DEFAULT_CROP_DUR,
-    DEFAULT_METADATA_TAGS,
-    BLACKLIST_GENRES,
-)
+import music_data_pipeline.constants as C
 
 
 def validate_prune_data(
-    entries: List[Dict], metadata_tags: List = DEFAULT_METADATA_TAGS
+    entries: List[Dict], metadata_tags: List = C.DEFAULT_METADATA_TAGS
 ) -> List[Dict]:
     """
     Removes entries lacking audio files or at least 1 metadata tag.
     """
 
     # No audio path:
-    no_audio_indices = [i for i, e in enumerate(entries) if not e["audio_path"]
-                        or e["audio_path"] is None]
+    no_audio_indices = [
+        i
+        for i, e in enumerate(entries)
+        if not e["audio_path"] or e["audio_path"] is None
+    ]
 
     # No relevant metadata tags:
     no_metadata_indices = [
@@ -45,6 +40,8 @@ def validate_prune_data(
 """
 Audio data
 """
+
+
 def _get_audio_duration(audio: torch.Tensor, sr: int) -> float:
     """
     Extracts audio duration, given audio tensor.
@@ -78,7 +75,7 @@ def compute_all_embeddings(entries: List[Dict]) -> Tuple[List[Dict], List[int]]:
     Computes fixed-length log mel spectrogram embeddings for all entries.
     Logs embedding, sample rate, audio path, and duration to a dictionary.
 
-    If the audio filepath or content for a given entry is corrupted, the entry's id is 
+    If the audio filepath or content for a given entry is corrupted, the entry's id is
     appended to a remove_ids list.
 
     Returns the embeddings and remove_ids lists.
@@ -95,7 +92,7 @@ def compute_all_embeddings(entries: List[Dict]) -> Tuple[List[Dict], List[int]]:
                 "embedding": embedding,
                 "sample_rate": sr,
                 "audio_path": e["audio_path"],
-                "duration": duration
+                "duration": duration,
             }
             embeddings.append(embedding_entry)
 
@@ -112,8 +109,8 @@ def compute_all_embeddings(entries: List[Dict]) -> Tuple[List[Dict], List[int]]:
 
 def find_similar_audio(
     entries: List[Dict],
-    sim_thres: float = DEFAULT_SIM_THRES,
-    dur_delta_thres: float = DEFAULT_DUR_DELTA_THRES
+    sim_thres: float = C.DEFAULT_SIM_THRES,
+    dur_delta_thres: float = C.DEFAULT_DUR_DELTA_THRES,
 ) -> List[Dict]:
     """
     Compares each pair of audio files, and flags (potential) duplicates.
@@ -126,7 +123,7 @@ def find_similar_audio(
     N.b.: by default, the pair member closer to the end of the entry list
     is flagged as a duplicate.
     """
-    # For efficiency, precompute audio embeddings: 
+    # For efficiency, precompute audio embeddings:
     embeddings, remove_ids = compute_all_embeddings(entries)
     for i, e_1 in enumerate(tqdm(embeddings, desc="Duplicate detection")):
         if e_1["_id"] in remove_ids:
@@ -150,8 +147,10 @@ def find_similar_audio(
                 continue
 
             # If differing sample rates or durations, continue:
-            if (e_1["sample_rate"] != e_2["sample_rate"]
-                or abs(e_1["duration"] - e_2["duration"]) > dur_delta_thres):
+            if (
+                e_1["sample_rate"] != e_2["sample_rate"]
+                or abs(e_1["duration"] - e_2["duration"]) > dur_delta_thres
+            ):
                 continue
 
             # Compute cosine similarity between embeddings and update entries:
@@ -166,6 +165,77 @@ def find_similar_audio(
         print(f"Deleting {len(remove_ids)} redundant entries...")
         entries = [e for e in entries if e["_id"] not in remove_ids]
         print(f"{len(entries)} remaining entries.")
+
+    return entries
+
+
+def chunk_audio(
+    entries: List[Dict],
+    min_chunk_dur: int = C.DEFAULT_CROP_DUR,
+    max_chunk_dur: int = C.DEFAULT_MAX_CHUNK_DUR,
+) -> List[Dict]:
+    """
+    Partitions audio of entries of duration > max_chunk_dur into
+    multiple audio files. Updates source entry audio paths, and appends new entries
+    (replicating source entry metadata). Saves new audio segments to
+    the existing audio directory.
+    """
+    long_dur_entries = [
+        (i, e) for i, e in enumerate(entries) if e["duration"] > max_chunk_dur
+    ]
+
+    if not long_dur_entries:
+        return entries
+
+    for i, e in long_dur_entries:
+        audio, sr = torchaudio.load(e["audio_path"])
+        total_dur = e["duration"]
+        max_chunk_samples = max_chunk_dur * sr
+        n_chunks = int(total_dur // max_chunk_dur)
+        # If the remainder >= min_chunk_dur, add 1 chunk
+        # (of some duration < max_chunk_dur):
+        if total_dur % max_chunk_dur >= min_chunk_dur:
+            n_chunks += 1
+
+        pure_path = PurePath(e["audio_path"])
+
+        # Determine the number of chunks
+        # (None should have a duration < min_chunk_samples)
+        for j in range(n_chunks):
+            if j == n_chunks - 1:
+                audio_seg = audio[:, max_chunk_samples * j :]
+            else:
+                audio_seg = audio[
+                    :, max_chunk_samples * j : max_chunk_samples * (j + 1)
+                ]
+
+            # Compute chunk duration:
+            chunk_dur = round(audio_seg.shape[1] / sr, 3)
+
+            # Define segment audio path
+            # audio directory + {basename_partition}.wav:
+            new_filename = pure_path.name[:-4] + f"_{j}" + ".wav"
+            new_path = Path(pure_path.parent, new_filename)
+
+            # Write audio segment to wav file:
+            torchaudio.save(new_path, audio_seg, sr, format="WAV")
+
+            # Update or create entry. Include partition index.
+            # Nb: track_id is shared among partitions.
+            if j == 0:
+                entries[i]["audio_path"] = str(new_path)
+                entries[i]["partition"] = j
+                entries[i]["duration"] = chunk_dur
+                entries[i]["start_sec"] = 0
+            else:
+                new_entry = deepcopy(e)
+                new_entry["_id"] = str(uuid.uuid1())  # assign a unique ID
+                new_entry["audio_path"] = str(new_path)
+                new_entry["partition"] = j
+                new_entry["duration"] = chunk_dur
+                new_entry["start_sec"] = max_chunk_dur * j
+
+                entries.append(new_entry)
 
     return entries
 
@@ -198,7 +268,7 @@ def _detect_silent_regions(
     if onset_seconds.shape[0] == 0:
         return [(0, total_dur)]
 
-    start = onset_seconds[0]
+    start = round(onset_seconds[0].item(), 3)
 
     # If the first onset is > silent_region_thres seconds,
     # the first silent region = (0, start)
@@ -206,6 +276,7 @@ def _detect_silent_regions(
         silent_regions.append((0, start))
 
     for sec in onset_seconds:
+        sec = round(sec.item(), 3)
         delta = sec - start
 
         if delta > silent_region_thres:
@@ -224,8 +295,8 @@ def _detect_silent_regions(
 
 def add_silent_regions(
     entries: List[Dict],
-    silence_thres: float = DEFAULT_SILENCE_THRES,
-    silent_region_thres: float = DEFAULT_SILENCE_THRES,
+    silence_thres: float = C.DEFAULT_SILENCE_THRES,
+    silent_region_thres: float = C.DEFAULT_SILENT_REGION_THRES,
 ) -> List[Dict]:
     """
     Collects silent regions for all entries. Stores as (onset, offset) tuples.
@@ -241,94 +312,37 @@ def add_silent_regions(
     return entries
 
 
-def chunk_audio(
-    entries: List[Dict],
-    min_chunk_dur=DEFAULT_CROP_DUR,
-    max_chunk_dur=DEFAULT_MAX_CHUNK_DUR,
-) -> List[Dict]:
-    """
-    Partitions audio of entries of duration > max_chunk_dur into
-    multiple audio files. Updates source entry audio paths, and appends new entries
-    (replicating source entry metadata). Saves new audio segments to
-    the existing audio directory.
-    """
-    long_dur_entries = [
-        (i, e) for i, e in enumerate(entries) if e["duration"] > max_chunk_dur
-    ]
-
-    if not long_dur_entries:
-        return entries
-
-    for i, e in long_dur_entries:
-        audio, sr = torchaudio.load(e["audio_path"])
-        total_dur = e["duration"]
-        max_chunk_samples = max_chunk_dur * sr
-        n_chunks = total_dur // max_chunk_dur
-        # If the remainder >= min_chunk_dur, add 1 chunk
-        # (of some duration < max_chunk_dur):
-        if total_dur % max_chunk_dur >= min_chunk_dur:
-            n_chunks += 1
-
-        for j in range(n_chunks):
-            if j == n_chunks - 1:
-                audio_seg = audio[:, max_chunk_samples * j :]
-            else:
-                audio_seg = audio[
-                    :, max_chunk_samples * j : max_chunk_samples * (j + 1)
-                ]
-
-            # Define segment audio path
-            # audio directory + {basename_partition}.wav:
-            pure_path = PurePath(e["audio_path"])
-            new_filename = pure_path.name[:-4] + f"_{j}" + ".wav"
-            new_path = Path(pure_path.parent, new_filename)
-
-            # Write audio segment to wav file:
-            torchaudio.save(new_path, audio_seg, format="WAV")
-
-            # Update or create entry. Include partition index:
-            if j == 0:
-                entries[i]["audio_path"] = str(new_path)
-                entries[i]["partition"] = j
-            else:
-                new_entry = deepcopy(e)
-                new_entry["_id"] = entries[-1]["_id"] + 1
-                new_entry["audio_path"] = str(new_path)
-                new_entry["partition"] = j
-                entries.append(new_entry)
-
-    return entries
-
-
 """
 Text preprocessing
 """
 
 
-def _tokenize(text: Union[str, List[str]]) -> Union[str, List[str]]:
+def _tokenize(text: Union[str, List[str]], strip_chars: str) -> Union[str, List[str]]:
     """
     Tokenizes individual strings or lists of strings.
     """
 
-    def tidy_text(text):
+    def tidy_text(text, strip_chars):
         # Lower case, remove any hyphenation, and trim whitespace:
-        return (
-            text.lower().replace("-", " ").replace("/", " ").replace("_", " ").strip()
-        )
+        table = str.maketrans({c: " " for c in strip_chars})
+        text = text.translate(table)
+        return text.lower().strip()
 
     if isinstance(text, str):
-        return tidy_text(text)
+        return tidy_text(text, strip_chars)
 
     if isinstance(text, list):
         for i, el in enumerate(text):
-            text[i] = tidy_text(el)
+            text[i] = tidy_text(el, strip_chars)
         return text
 
     raise TypeError("Text must be either a string or a list of strings.")
 
 
 def tokenize_metadata(
-    entries: List[Dict], metadata_tags: List[str] = DEFAULT_METADATA_TAGS
+    entries: List[Dict],
+    metadata_tags: List[str] = C.DEFAULT_METADATA_TAGS,
+    strip_chars: str = C.CHARS_TO_STRIP,
 ):
     """
     Tokenizes text metadata for all entries.
@@ -337,7 +351,7 @@ def tokenize_metadata(
     for i, e in enumerate(tqdm(entries, desc="Tokenizing metadata")):
         for tag in metadata_tags:
             if tag in e:
-                tokenized_tag = _tokenize(e[tag])
+                tokenized_tag = _tokenize(e[tag], strip_chars)
                 entries[i][tag] = tokenized_tag
 
     return entries
@@ -355,13 +369,13 @@ def _contains_blacklist_genre(entry: Dict, blacklist: Set[str]) -> bool:
 
 
 def extract_blacklisted_genres(
-    entries: List[Dict], blacklist_genres: Set[str] = BLACKLIST_GENRES
+    entries: List[Dict], blacklist_genres: Set[str] = C.BLACKLIST_GENRES
 ) -> List[Dict]:
     """
     Adds "bad_genre" blacklist flag for entries containing blacklisted genres.
     """
     for i, e in enumerate(entries):
-        if "genre" in e and _contains_blacklist_genre(e, blacklist_genres):
+        if "genres" in e and _contains_blacklist_genre(e, blacklist_genres):
             entries[i]["blacklist_flags"].append("bad_genre")
 
     return entries

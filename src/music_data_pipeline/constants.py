@@ -5,7 +5,7 @@ import torchaudio.functional as F
 Audio data preprocessing
 """
 # The similarity threshold between 2 audio files:
-DEFAULT_SIM_THRES = 0.9
+DEFAULT_SIM_THRES = 0.995
 
 # Duration difference threshold between 2 audio files, in seconds:
 DEFAULT_DUR_DELTA_THRES = 2.0
@@ -23,7 +23,9 @@ DEFAULT_MAX_CHUNK_DUR = 180
 """
 Metadata (text) preprocessing
 """
-DEFAULT_METADATA_TAGS = ["artist_name", "album_title", "track_title", "genres"]
+DEFAULT_METADATA_TAGS = ["artist", "album_title", "track_title", "genres"]
+
+CHARS_TO_STRIP = "_/-"
 
 BLACKLIST_GENRES = {
     "podcast",

@@ -30,9 +30,9 @@ def _match(entry: Dict, filter_query: Dict) -> bool:
 def apply_filter_query(input_data: List[Dict], filter_query: Dict) -> List[Dict]:
     """
     Applies filter query to input entries.
-    Returns filtered entry dictionary.
+    Returns filtered entry list.
     """
-    filt_input_data = {entry for entry in input_data if _match(entry, filter_query)}
+    filt_input_data = [entry for entry in input_data if _match(entry, filter_query)]
 
     return filt_input_data
 
@@ -90,7 +90,7 @@ def apply_augmentations(
     """
 
     if n_augs == 1:
-        rand_aug = random.choice(augmentations.keys())
+        rand_aug = random.choice(list(augmentations.keys()))
 
         if rand_aug == "pitch_shift":
             return augmentations[rand_aug](audio, sr)
