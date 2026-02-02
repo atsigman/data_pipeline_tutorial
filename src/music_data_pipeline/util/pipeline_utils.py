@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from music_data_pipeline.constants import (
     DEFAULT_SIM_THRES,
+    DEFAULT_DUR_DELTA_THRES,
     DEFAULT_SILENCE_THRES,
     DEFAULT_SILENT_REGION_THRES,
     DEFAULT_MAX_CHUNK_DUR,
@@ -26,7 +27,8 @@ def validate_prune_data(
     """
 
     # No audio path:
-    no_audio_indices = [i for i, _ in enumerate(entries) if not entries["audio_path"]]
+    no_audio_indices = [i for i, e in enumerate(entries) if not e["audio_path"]
+                        or e["audio_path"] is None]
 
     # No relevant metadata tags:
     no_metadata_indices = [
@@ -50,33 +52,68 @@ def _get_audio_duration(audio: torch.Tensor, sr: int) -> float:
     return round(audio.shape[1] / sr, 3)
 
 
-def _compute_audio_similarity(
-    entries: List[Dict],
-    audio_1: torch.Tensor,
-    audio_2: torch.Tensor,
-    sim_thres: float,
-    i: int,
-    j: int,
-) -> List[Dict]:
+def _compute_embedding(audio: torch.Tensor, sr: int) -> torch.Tensor:
     """
-    Computes mean absolute difference between waveforms.
-    If the similarity is > sim_thres, "duplicate" is appended to
-    the audio_2 entry's blacklist_flags list.
-
-    Returns (possibly modified) entries.
+    Returns a fixed-length normalized log mel embedding for duplicate detection.
     """
-    audio_sim = torch.abs(audio_1 - audio_2).mean()
-    if audio_sim > sim_thres:
-        sim_perc = round(audio_sim * 100, 1)
-        print(f"{sim_perc}% similarity detected between entries {i} and {i + j}...")
+    # Stereo -> mono
+    if audio.ndim == 2 and audio.shape[0] > 1:
+        audio = audio.mean(dim=0, keepdim=True)
 
-        entries[i + j]["blacklist_flags"].append("duplicate")
+    mel = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sr,
+        n_mels=64,
+        n_fft=1024,
+        hop_length=512,
+    )(audio)
 
-    return entries
+    log_mel = torch.log(mel + 1e-6)
+    embedding = log_mel.mean(dim=-1).squeeze(0)  # shape: [64]
+
+    return torch.nn.functional.normalize(embedding, dim=0)
+
+
+def compute_all_embeddings(entries: List[Dict]) -> Tuple[List[Dict], List[int]]:
+    """
+    Computes fixed-length log mel spectrogram embeddings for all entries.
+    Logs embedding, sample rate, audio path, and duration to a dictionary.
+
+    If the audio filepath or content for a given entry is corrupted, the entry's id is 
+    appended to a remove_ids list.
+
+    Returns the embeddings and remove_ids lists.
+    """
+    embeddings, remove_ids = [], []
+
+    for i, e in enumerate(tqdm(entries, desc="Computing embeddings")):
+        try:
+            audio, sr = torchaudio.load(e["audio_path"])
+            duration = _get_audio_duration(audio, sr)
+            embedding = _compute_embedding(audio, sr)
+            embedding_entry = {
+                "_id": e["_id"],
+                "embedding": embedding,
+                "sample_rate": sr,
+                "audio_path": e["audio_path"],
+                "duration": duration
+            }
+            embeddings.append(embedding_entry)
+
+        # If file or filepath is corrupted, append the _id to
+        # remove_ids, and a dictionary containing only the _id
+        # to embeddings (to ensure length parity between entries and embeddings):
+        except Exception as e:
+            print(e)
+            remove_ids.append(e["_id"])
+            embeddings.append({"_id": e["_id"]})
+
+    return embeddings, remove_ids
 
 
 def find_similar_audio(
-    entries: List[Dict], sim_thres: float = DEFAULT_SIM_THRES
+    entries: List[Dict],
+    sim_thres: float = DEFAULT_SIM_THRES,
+    dur_delta_thres: float = DEFAULT_DUR_DELTA_THRES
 ) -> List[Dict]:
     """
     Compares each pair of audio files, and flags (potential) duplicates.
@@ -89,41 +126,46 @@ def find_similar_audio(
     N.b.: by default, the pair member closer to the end of the entry list
     is flagged as a duplicate.
     """
-    remove_idxs = []
-    for i, e_1 in enumerate(tqdm(entries[:-1], desc="Duplicate detection")):
-        audio_1, sr_1 = torchaudio.load(e_1["audio_path"])
-        e_1_duration = _get_audio_duration(audio_1, sr_1)
-        entries[i]["duration"] = e_1_duration
+    # For efficiency, precompute audio embeddings: 
+    embeddings, remove_ids = compute_all_embeddings(entries)
+    for i, e_1 in enumerate(tqdm(embeddings, desc="Duplicate detection")):
+        if e_1["_id"] in remove_ids:
+            continue
+
+        if "duration" not in entries[i]:
+            entries[i]["duration"] = e_1["duration"]
 
         # Compare against all other audio:
-        for j, e_2 in enumerate(entries[i + 1 :]):
+        for j, e_2 in enumerate(embeddings[i + 1 :]):
+
+            if e_2["_id"] in remove_ids:
+                continue
 
             # If audio path the same as for e_1, mark e_2 for deletion:
             if e_1["audio_path"] == e_2["audio_path"]:
-                remove_idxs.append(i + j)
+                remove_ids.append(e_2["_id"])
 
             # Continue if already flagged as a duplicate:
-            if "duplicate" in e_2["blacklist_flags"]:
+            if "duplicate" in entries[i + j]["blacklist_flags"]:
                 continue
-
-            # Load and extract duration:
-            audio_2, sr_2 = torchaudio.load(e_2["audio_path"])
-            e_2_duration = _get_audio_duration(audio_2, sr_2)
-            entries[i + j]["duration"] = e_2_duration
 
             # If differing sample rates or durations, continue:
-            if sr_1 != sr_2 or e_1_duration != e_2_duration:
+            if (e_1["sample_rate"] != e_2["sample_rate"]
+                or abs(e_1["duration"] - e_2["duration"]) > dur_delta_thres):
                 continue
 
-            # Compute audio similarity and update entries:
-            entries = _compute_audio_similarity(
-                entries, audio_1, audio_2, sim_thres, i, j
-            )
+            # Compute cosine similarity between embeddings and update entries:
+            sim = torch.dot(e_1["embedding"], e_2["embedding"]).item()
+
+            if sim > sim_thres:
+                entries[i + j]["blacklist_flags"].append("duplicate")
+                entries[i + j]["duplicate_of"] = e_1["_id"]
 
     # If there are any entries to remove,filter entries:
-    if remove_idxs:
-        print(f"Deleting {len(remove_idxs)} redundant entries...")
-        entries = [e for i, e in enumerate(entries) if i not in remove_idxs]
+    if remove_ids:
+        print(f"Deleting {len(remove_ids)} redundant entries...")
+        entries = [e for e in entries if e["_id"] not in remove_ids]
+        print(f"{len(entries)} remaining entries.")
 
     return entries
 

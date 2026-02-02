@@ -7,6 +7,9 @@ Audio data preprocessing
 # The similarity threshold between 2 audio files:
 DEFAULT_SIM_THRES = 0.9
 
+# Duration difference threshold between 2 audio files, in seconds:
+DEFAULT_DUR_DELTA_THRES = 2.0
+
 # Silence RMS threshold:
 DEFAULT_SILENCE_THRES = 0.005
 
@@ -15,7 +18,7 @@ DEFAULT_SILENCE_THRES = 0.005
 DEFAULT_SILENT_REGION_THRES = 2
 
 # Maximum audio chunk duration (in seconds):
-DEFAULT_MAX_CHUNK_DUR = 600
+DEFAULT_MAX_CHUNK_DUR = 180
 
 """
 Metadata (text) preprocessing
