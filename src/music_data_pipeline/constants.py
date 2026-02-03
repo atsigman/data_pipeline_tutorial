@@ -1,3 +1,4 @@
+import random
 import torch
 import torchaudio.functional as F
 
@@ -66,16 +67,37 @@ OP_DICT = {
     "$exists": lambda val, op_val: (val is not None) == op_val,
 }
 
+
+def _apply_gain(audio, low=-0.8, high=1.2):
+    """
+    Randomly scales the waveform amplitude and clamps to the [-1, 1] range.
+    """
+    gain = torch.empty(1).uniform_(low, high)
+    return torch.clamp(audio * gain, -1.0, 1.0)
+
+
 # Hashmap of audio augmentation operations:
 AUGMENTATION_HM = {
     "none": lambda audio: audio,
     "invert": lambda audio: -audio,
-    "flip_chan": lambda audio: torch.flip(audio, dims=[0]),
-    "gain": lambda audio, low=0.8, high=1.1: audio * torch.empty(1).uniform_(low, high),
+    "gain": lambda audio, low=0.8, high=1.2: _apply_gain(audio, low, high),
     "noise": lambda audio: audio + 0.01 * torch.rand_like(audio),
     "pitch_shift": lambda audio, sr, min_shift=-2.0, max_shift=2.0: F.pitch_shift(
         audio,
         sample_rate=sr,
         n_steps=torch.empty(1).uniform_(min_shift, max_shift).item(),
     ),
+}
+
+
+# Template for generating text descriptions,
+# based upon available tag(s):
+DESCRIPTION_TEMPLATE = {
+    "artist": lambda x: f"by the artist {x.title()}",
+    "album_title": lambda x: f"from the album {x.title()}",
+    "tempo": lambda x: [f"at {x} BPM", f"at tempo {x}"],
+    "genres": lambda x: [
+        f"in the {random.choice(x)} genre",
+        f"best categorized as {random.choice(x)}",
+    ],
 }

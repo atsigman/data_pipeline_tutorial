@@ -1,11 +1,16 @@
 import numpy as np
 import random
 
+from math import ceil, floor
 from typing import Dict, List, Tuple
 
 import torch
 
-from music_data_pipeline.constants import DEFAULT_CROP_RES, OP_DICT
+from music_data_pipeline.constants import (
+    DEFAULT_CROP_RES,
+    OP_DICT,
+    DESCRIPTION_TEMPLATE,
+)
 
 
 def _match(entry: Dict, filter_query: Dict) -> bool:
@@ -78,7 +83,9 @@ def crop_pad_audio(
         )
 
     # Seconds to samples for onset and offset:
-    onset_sample, offset_sample = int(sel_onset * sr), int((sel_onset + crop_dur) * sr)
+    onset_sample, offset_sample = floor(sel_onset * sr), ceil(
+        (sel_onset + crop_dur) * sr
+    )
     return audio[:, onset_sample:offset_sample]
 
 
@@ -101,3 +108,31 @@ def apply_augmentations(
     raise NotImplementedError(
         "Handling multiple augmentations intentionally omitted in this tutorial."
     )
+
+
+def generate_description(entry: Dict, template: Dict = DESCRIPTION_TEMPLATE):
+    """
+    Generates a text description based upon available entry tags.
+    """
+
+    # Return default description if no relevant tags
+    # in the entry:
+    if not any(k in entry for k in template):
+        return "An unlabeled music track"
+
+    description = "A music track "
+
+    # Iterate over the keys in the template,
+    # and concatenate relevant formatted string to description:
+    for k in template:
+        if k in entry:
+            template_segment = template[k](entry[k])
+            if isinstance(template_segment, list):
+                template_segment = random.choice(template_segment)
+
+            description += template_segment + " "
+
+    # Strip final whitespace and add ".":
+    description = description.strip() + "."
+
+    return description
