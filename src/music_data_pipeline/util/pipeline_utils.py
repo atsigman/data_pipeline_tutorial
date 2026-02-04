@@ -12,7 +12,7 @@ import music_data_pipeline.constants as C
 
 
 def validate_prune_data(
-    entries: List[Dict], metadata_tags: List = C.DEFAULT_METADATA_TAGS
+    entries: List[Dict], metadata_tags: Set = C.DEFAULT_METADATA_TAGS
 ) -> List[Dict]:
     """
     Removes entries lacking audio files or at least 1 metadata tag.
@@ -25,16 +25,27 @@ def validate_prune_data(
         if not e["audio_path"] or e["audio_path"] is None
     ]
 
+    if no_audio_indices:
+        print(f"{len(no_audio_indices)} entries with no audio path.")
+
     # No relevant metadata tags:
     no_metadata_indices = [
         i for i, e in enumerate(entries) if not any(t in e for t in metadata_tags)
     ]
 
-    return [
+    if no_metadata_indices:
+        print(f"{len(no_metadata_indices)} entries with no audio path.")
+
+
+    entries = [
         e
         for i, e in enumerate(entries)
         if i not in no_audio_indices and i not in no_metadata_indices
     ]
+
+    print(f"{len(entries)} remaining entries.")
+
+    return entries
 
 
 """
@@ -187,7 +198,7 @@ def chunk_audio(
     if not long_dur_entries:
         return entries
 
-    for i, e in long_dur_entries:
+    for i, e in tqdm(long_dur_entries, desc="Audio chunking"):
         audio, sr = torchaudio.load(e["audio_path"])
         total_dur = e["duration"]
         max_chunk_samples = max_chunk_dur * sr
@@ -197,10 +208,10 @@ def chunk_audio(
         if total_dur % max_chunk_dur >= min_chunk_dur:
             n_chunks += 1
 
+        print(f"Segmenting entry {i} into {n_chunks} chunks...")
+
         pure_path = PurePath(e["audio_path"])
 
-        # Determine the number of chunks
-        # (None should have a duration < min_chunk_samples)
         for j in range(n_chunks):
             if j == n_chunks - 1:
                 audio_seg = audio[:, max_chunk_samples * j :]
@@ -374,8 +385,11 @@ def extract_blacklisted_genres(
     """
     Adds "bad_genre" blacklist flag for entries containing blacklisted genres.
     """
+    blacklist_tally = 0
     for i, e in enumerate(entries):
         if "genres" in e and _contains_blacklist_genre(e, blacklist_genres):
             entries[i]["blacklist_flags"].append("bad_genre")
+            blacklist_tally += 1
 
+    print(f"{blacklist_tally} entries with at least one blacklisted genre.")
     return entries

@@ -24,7 +24,7 @@ DEFAULT_MAX_CHUNK_DUR = 180
 """
 Metadata (text) preprocessing
 """
-DEFAULT_METADATA_TAGS = ["artist", "album_title", "track_title", "genres"]
+DEFAULT_METADATA_TAGS = {"artist", "album_title", "track_title", "genres"}
 
 CHARS_TO_STRIP = "_/-"
 
