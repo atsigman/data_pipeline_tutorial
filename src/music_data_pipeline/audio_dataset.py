@@ -80,13 +80,14 @@ class AudioDataset(Dataset):
 
         audio, sr = torchaudio.load(entry["audio_path"], backend=backend)
 
+        # Convert to mono (as dataset may contain a mix of stereo and mono files):
+        if audio.shape[0] > 1:
+            audio = audio.mean(dim=0, keepdim=True)
+
         # Resample, if source sr != target_sr
         if sr != self.target_sr:
             audio = resample(audio, orig_freq=sr, new_freq=self.target_sr)
 
-        # Convert to mono (as dataset may contain a mix of stereo and mono files):
-        if audio.shape[0] > 1:
-            audio = audio.mean(dim=0, keepdim=True)
 
         audio_dur = entry["duration"]
         # Crop audio:
