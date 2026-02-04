@@ -41,7 +41,7 @@ BLACKLIST_GENRES = {
 """
 Audio Dataset
 """
-DEFAULT_SR = 44100
+DEFAULT_SR = 16000
 DEFAULT_CROP_DUR = 10
 # Default resolution for gradating/quantizing onset crop ranges
 # (in seconds):
