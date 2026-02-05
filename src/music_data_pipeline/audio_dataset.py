@@ -1,12 +1,13 @@
 import torch
 import torchaudio
 
-from dataclasses import dataclass
 from math import ceil
 from typing import Dict, List
 
 from torch.utils.data import Dataset
 from torchaudio.functional import resample
+
+from music_data_pipeline.conditioners import TextCondition
 
 from music_data_pipeline.constants import (
     DEFAULT_FILTER_QUERY,
@@ -21,16 +22,6 @@ from music_data_pipeline.util.dataset_utils import (
     apply_augmentations,
     generate_description,
 )
-
-
-@dataclass
-class TextCondition:
-    artist: str
-    album_title: str
-    track_title: str
-    genres: List[str]
-    description: str
-    tempo: int
 
 
 class AudioDataset(Dataset):
@@ -88,7 +79,6 @@ class AudioDataset(Dataset):
         if sr != self.target_sr:
             audio = resample(audio, orig_freq=sr, new_freq=self.target_sr)
 
-
         audio_dur = entry["duration"]
         # Crop audio:
         if audio_dur > self.crop_dur:
@@ -108,6 +98,9 @@ class AudioDataset(Dataset):
 
         else:
             trimmed_audio = audio
+
+        # No need to keep in memory:
+        del audio
 
         trimmed_audio = self._adjust_trimmed_duration(trimmed_audio)
 
