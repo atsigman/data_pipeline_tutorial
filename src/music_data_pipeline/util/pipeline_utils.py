@@ -226,7 +226,7 @@ def chunk_audio(
             # Define segment audio path
             # audio directory + {basename_partition}.wav:
             new_filename = pure_path.name[:-4] + f"_{j}" + ".wav"
-            new_path = Path(pure_path.parent, new_filename)
+            new_path = str(Path(pure_path.parent, new_filename))
 
             # Write audio segment to wav file:
             torchaudio.save(new_path, audio_seg, sr, format="WAV")
@@ -234,14 +234,14 @@ def chunk_audio(
             # Update or create entry. Include partition index.
             # Nb: track_id is shared among partitions.
             if j == 0:
-                entries[i]["audio_path"] = str(new_path)
+                entries[i]["audio_path"] = new_path
                 entries[i]["partition"] = j
                 entries[i]["duration"] = chunk_dur
                 entries[i]["start_sec"] = 0
             else:
                 new_entry = deepcopy(e)
                 new_entry["_id"] = str(uuid.uuid1())  # assign a unique ID
-                new_entry["audio_path"] = str(new_path)
+                new_entry["audio_path"] = new_path
                 new_entry["partition"] = j
                 new_entry["duration"] = chunk_dur
                 new_entry["start_sec"] = max_chunk_dur * j

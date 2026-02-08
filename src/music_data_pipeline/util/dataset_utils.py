@@ -1,4 +1,3 @@
-import numpy as np
 import random
 
 from math import ceil, floor
@@ -61,11 +60,11 @@ def crop_pad_audio(
     max_onset = audio_dur - crop_dur
 
     # Quantize onset range:
-    all_crop_onsets = list(np.linspace(0, max_onset, int(max_onset / crop_res) + 1))
+    all_crop_onsets = list(torch.linspace(0, max_onset, int(max_onset / crop_res) + 1))
 
     # If no silent_regions, just select a random onset from all_crop_onsets:
     if not silent_regions or silent_regions is not None:
-        sel_onset = random.sample(all_crop_onsets, k=1)[0]
+        sel_onset = random.sample(all_crop_onsets, k=1)[0].item()
 
     # Otherwise, filter valid crop onsets first (advanced path: not implemented):
     else:
