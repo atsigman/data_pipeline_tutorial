@@ -188,7 +188,6 @@ def find_similar_audio(
 
             # Compute cosine similarity between embeddings:
             sim = torch.dot(e_1["embedding"], e_2["embedding"]).item()
-            print(sim)
 
             if sim > sim_thres:
                 add_blacklist_flags("duplicate_audio_content",
