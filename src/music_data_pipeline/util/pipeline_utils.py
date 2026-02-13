@@ -100,6 +100,7 @@ def compute_all_embeddings(entries: List[Dict]) -> Tuple[List[Dict], List[int]]:
             embedding = _compute_embedding(audio, sr)
             embedding_entry = {
                 "_id": e["_id"],
+                "track_id": e["track_id"],
                 "embedding": embedding,
                 "sample_rate": sr,
                 "audio_path": e["audio_path"],
@@ -127,34 +128,55 @@ def find_similar_audio(
     Compares each pair of audio files, and flags (potential) duplicates.
     Returns (potentially modified) entry list.
 
-    If 2 audio *paths* are identical, the second pair member is removed.
+    If 2 audio *paths* are identical, flags both entries as "duplicate_audio_paths".
+    If the *content* of 2 audio files is highly similar, flags both entries as
+    "duplicate_audio_content."
 
     Also computes and logs audio duration.
-
-    N.b.: by default, the pair member closer to the end of the entry list
-    is flagged as a duplicate.
     """
-    # For efficiency, precompute audio embeddings:
-    embeddings, remove_ids = compute_all_embeddings(entries)
-    for i, e_1 in enumerate(tqdm(embeddings, desc="Duplicate detection")):
-        if e_1["_id"] in remove_ids:
-            continue
 
+    # Compute audio embeddings and compile ids of corrupted audio files/paths.
+    embeddings, remove_ids = compute_all_embeddings(entries)
+
+    # If remove_ids is nonempty, prune the entries list accordingly.
+    # This will align embeddings with entries.
+    if remove_ids:
+        entries = [e for e in entries if e["_id"] not in remove_ids]
+        print(f"{len(remove_ids)} entries removed, ",
+              f"{len(entries)} entries remaining.")
+
+    # Sanity check that embeddings and entries lists are aligned:
+    assert len(embeddings) == len(entries), "Embeddings and entries lists should the same length."
+
+    # Compare each embedding against every other embedding:
+    for i, e_1 in enumerate(tqdm(embeddings, desc="Duplicate detection")):
+
+        # Copy duration from embeddings list to entries list:
         if "duration" not in entries[i]:
             entries[i]["duration"] = e_1["duration"]
 
         # Compare against all other audio:
-        for j, e_2 in enumerate(embeddings[i + 1 :]):
+        for j in range(i + 1, len(embeddings)):
+            e_2 = embeddings[j]
 
-            if e_2["_id"] in remove_ids:
-                continue
+            def add_blacklist_flags(flag: str, sim_score: float = None) -> None:
+                """
+                Add given flag to 2 similar entries, and cross reference
+                track_ids. If audio sim_score is provided, adds to both entries.
+                """
+                cross_ref_key = flag + "_of"
+                for idx, track_id in zip([i, j], [e_2["track_id"], e_1["track_id"]]):
+                    if flag not in entries[idx]["blacklist_flags"]:
+                        entries[idx]["blacklist_flags"].append(flag)
+                    entries[idx][cross_ref_key] = track_id
 
-            # If audio path the same as for e_1, mark e_2 for deletion:
+                    # Add similarity score, if given:
+                    if sim_score is not None:
+                        entries[idx]["audio_similarity_score"] = sim_score
+
+            # If audio path the same as for e_1, add "duplicate_audio_path" flags to both:
             if e_1["audio_path"] == e_2["audio_path"]:
-                remove_ids.append(e_2["_id"])
-
-            # Continue if already flagged as a duplicate:
-            if "duplicate" in entries[i + j]["blacklist_flags"]:
+                add_blacklist_flags("duplicate_audio_path")
                 continue
 
             # If differing sample rates or durations, continue:
@@ -164,18 +186,13 @@ def find_similar_audio(
             ):
                 continue
 
-            # Compute cosine similarity between embeddings and update entries:
+            # Compute cosine similarity between embeddings:
             sim = torch.dot(e_1["embedding"], e_2["embedding"]).item()
+            print(sim)
 
             if sim > sim_thres:
-                entries[i + j]["blacklist_flags"].append("duplicate")
-                entries[i + j]["duplicate_of"] = e_1["_id"]
-
-    # If there are any entries to remove,filter entries:
-    if remove_ids:
-        print(f"Deleting {len(remove_ids)} redundant entries...")
-        entries = [e for e in entries if e["_id"] not in remove_ids]
-        print(f"{len(entries)} remaining entries.")
+                add_blacklist_flags("duplicate_audio_content",
+                                    sim_score=sim)
 
     return entries
 
