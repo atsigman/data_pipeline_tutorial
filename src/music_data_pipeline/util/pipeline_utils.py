@@ -36,7 +36,6 @@ def validate_prune_data(
     if no_metadata_indices:
         print(f"{len(no_metadata_indices)} entries with no audio path.")
 
-
     entries = [
         e
         for i, e in enumerate(entries)
@@ -142,11 +141,14 @@ def find_similar_audio(
     # This will align embeddings with entries.
     if remove_ids:
         entries = [e for e in entries if e["_id"] not in remove_ids]
-        print(f"{len(remove_ids)} entries removed, ",
-              f"{len(entries)} entries remaining.")
+        print(
+            f"{len(remove_ids)} entries removed, ", f"{len(entries)} entries remaining."
+        )
 
     # Sanity check that embeddings and entries lists are aligned:
-    assert len(embeddings) == len(entries), "Embeddings and entries lists should the same length."
+    assert len(embeddings) == len(
+        entries
+    ), "Embeddings and entries lists should the same length."
 
     # Compare each embedding against every other embedding:
     for i, e_1 in enumerate(tqdm(embeddings, desc="Duplicate detection")):
@@ -190,8 +192,7 @@ def find_similar_audio(
             sim = torch.dot(e_1["embedding"], e_2["embedding"]).item()
 
             if sim > sim_thres:
-                add_blacklist_flags("duplicate_audio_content",
-                                    sim_score=sim)
+                add_blacklist_flags("duplicate_audio_content", sim_score=sim)
 
     return entries
 
