@@ -63,7 +63,7 @@ def crop_pad_audio(
     all_crop_onsets = list(torch.linspace(0, max_onset, int(max_onset / crop_res) + 1))
 
     # If no silent_regions, just select a random onset from all_crop_onsets:
-    if not silent_regions or silent_regions is not None:
+    if not silent_regions or silent_regions is None:
         sel_onset = random.sample(all_crop_onsets, k=1)[0].item()
 
     # Otherwise, filter valid crop onsets first (advanced path: not implemented):
