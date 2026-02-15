@@ -67,6 +67,8 @@ def _compute_embedding(audio: torch.Tensor, sr: int) -> torch.Tensor:
     if audio.ndim == 2 and audio.shape[0] > 1:
         audio = audio.mean(dim=0, keepdim=True)
 
+    audio = audio / (audio.abs().max() + 1e-8)
+
     mel = torchaudio.transforms.MelSpectrogram(
         sample_rate=sr,
         n_mels=64,

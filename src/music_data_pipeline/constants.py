@@ -6,7 +6,7 @@ import torchaudio.functional as F
 Audio data preprocessing
 """
 # The similarity threshold between 2 audio files:
-DEFAULT_SIM_THRES = 0.995
+DEFAULT_SIM_THRES = 0.997
 
 # Duration difference threshold between 2 audio files, in seconds:
 DEFAULT_DUR_DELTA_THRES = 2.0
