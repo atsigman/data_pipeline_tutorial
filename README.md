@@ -10,3 +10,5 @@ To use locally:
   3) Create a venv
   4) `pip install -e .`
   5) Use the Colab notebook as a guide for pipeline operations and `AudioDataset` functionality. 
+
+  The version of Pytorch indicated in `requirements.txt` is compatible with `python3.12`.
