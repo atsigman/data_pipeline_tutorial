@@ -59,13 +59,23 @@ def _get_audio_duration(audio: torch.Tensor, sr: int) -> float:
     return round(audio.shape[1] / sr, 3)
 
 
+def _stereo_to_mono(audio: torch.Tensor) -> torch.Tensor:
+    """
+    Converts a stereo waveform to mono
+    """
+
+    if audio.ndim == 2 and audio.shape[0] > 1:
+        audio = audio.mean(dim=0, keepdim=True)
+
+    return audio
+
+
 def _compute_embedding(audio: torch.Tensor, sr: int) -> torch.Tensor:
     """
     Returns a fixed-length normalized log mel embedding for duplicate detection.
     """
     # Stereo -> mono
-    if audio.ndim == 2 and audio.shape[0] > 1:
-        audio = audio.mean(dim=0, keepdim=True)
+    audio = _stereo_to_mono(audio)
 
     audio = audio / (audio.abs().max() + 1e-8)
 
@@ -288,7 +298,7 @@ def _detect_silent_regions(
     energy = torch.sqrt(torch.mean(frames**2, dim=-1))
 
     # Valid onsets have energy > the silence_thres. Filter these onsets:
-    onset_frames = torch.where(energy > silence_thres)[1]
+    onset_frames = torch.unique(torch.where(energy > silence_thres)[1])
 
     # Convert frames to seconds:
     # frames[i] = seconds[i] * sr / hop_size
@@ -305,7 +315,7 @@ def _detect_silent_regions(
     if start > silent_region_thres:
         silent_regions.append((0, start))
 
-    for sec in onset_seconds:
+    for sec in onset_seconds[1:]:
         sec = round(sec.item(), 3)
         delta = sec - start
 
