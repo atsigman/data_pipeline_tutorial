@@ -219,6 +219,13 @@ def chunk_audio(
     multiple audio files. Updates source entry audio paths, and appends new entries
     (replicating source entry metadata). Saves new audio segments to
     the existing audio directory.
+
+    N.b:
+        1) This function assumes that audio durations have already been computed
+        2) Given that entry metadata is copied across segments, this step should follow
+           any text preprocessing and blacklist flag collection.
+        3) However, this should precede silent region detection, given the audio segmentation
+           procedure.
     """
     long_dur_entries = [
         (i, e) for i, e in enumerate(entries) if e["duration"] > max_chunk_dur
@@ -229,6 +236,7 @@ def chunk_audio(
 
     for i, e in tqdm(long_dur_entries, desc="Audio chunking"):
         audio, sr = torchaudio.load(e["audio_path"])
+
         total_dur = e["duration"]
         max_chunk_samples = max_chunk_dur * sr
         n_chunks = int(total_dur // max_chunk_dur)
@@ -298,7 +306,8 @@ def _detect_silent_regions(
     energy = torch.sqrt(torch.mean(frames**2, dim=-1))
 
     # Valid onsets have energy > the silence_thres. Filter these onsets:
-    onset_frames = torch.unique(torch.where(energy > silence_thres)[1])
+    frame_active = (energy > silence_thres).any(dim=0)  # [n_channels, n_frames] -> [n_frames]
+    onset_frames = torch.where(frame_active)[0]
 
     # Convert frames to seconds:
     # frames[i] = seconds[i] * sr / hop_size
@@ -343,7 +352,12 @@ def add_silent_regions(
     """
     for i, e in enumerate(tqdm(entries, desc="Silent region detection")):
         audio, sr = torchaudio.load(e["audio_path"])
-        total_dur = _get_audio_duration(audio, sr)
+
+        # Calculate duration, if not already given:
+        if "duration" not in e:
+            e["duration"] = _get_audio_duration(audio, sr)
+
+        total_dur = e["duration"]
         silent_regions = _detect_silent_regions(
             audio, sr, total_dur, silence_thres, silent_region_thres
         )
