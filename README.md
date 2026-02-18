@@ -11,4 +11,7 @@ To use locally:
   4) `pip install -e .`
   5) Use the Colab notebook as a guide for pipeline operations and `AudioDataset` functionality. 
 
+  The pipeline can be run end-to-end (including dataframe operations, if the input data is in CSV format) by
+  executing the `run_pipeline.py` script in `src/scripts`
+
   The version of Pytorch indicated in `requirements.txt` is compatible with `python3.12`.
