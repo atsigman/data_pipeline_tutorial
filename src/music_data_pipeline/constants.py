@@ -2,6 +2,7 @@ import random
 import torch
 import torchaudio.functional as F
 
+
 """
 Audio data preprocessing
 """
@@ -20,6 +21,7 @@ DEFAULT_SILENT_REGION_THRES = 2
 
 # Maximum audio chunk duration (in seconds):
 DEFAULT_MAX_CHUNK_DUR = 180
+
 
 """
 Metadata (text) preprocessing
